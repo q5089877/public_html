@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWG1220 3D 模擬 (局部限位與接觸優化)</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(15, 23, 42, 0.95);
+            padding: 20px;
+            border-radius: 12px;
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            border: 1px solid #334155;
+            max-width: 340px;
+            z-index: 10;
+        }
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #38bdf8; border-bottom: 2px solid #38bdf8; padding-bottom: 8px; }
+        .feature-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #cbd5e1; }
+        .feature-list li { margin-bottom: 8px; }
+        .highlight { color: #f59e0b; font-weight: bold; }
+        .btn-group { margin-top: 15px; display: flex; flex-direction: column; gap: 8px; }
+        button {
+            background: #0284c7; color: white; border: none; padding: 12px; border-radius: 6px;
+            cursor: pointer; font-weight: bold; transition: all 0.2s;
+        }
+        button:hover { background: #0ea5e9; transform: translateY(-1px); }
+        button.active { background: #10b981; }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.4);
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2>物理修正：減半限位與緊密接觸</h2>
+        <ul class="feature-list">
+            <li><span class="highlight">限位機構長度減半:</span> 導軌高度縮減為原本的一半（約 10.5mm），與齒輪箱一體成型。</li>
+            <li><span class="highlight">緊密物理接觸:</span> 調整導軌橫向座標，確保導軌內側面與 M8 的 D-Cut 平面完全貼合，無空隙。</li>
+            <li><span class="highlight">標準 D-Cut (雙面):</span> 修正 M8 形狀，確保兩側為絕對平整的防轉受力面。</li>
+            <li><span class="highlight">隱藏傳動:</span> M4 絲桿長度優化，當 M8 縮回時完全不可見。</li>
+        </ul>
+        <div class="btn-group">
+            <button id="toggle-sleeve" onclick="toggleSleeve()">切換外殼透明度</button>
+            <button id="toggle-motion" class="active" onclick="toggleMotion()">暫停/播放 模擬</button>
+        </div>
+    </div>
+
+    <div id="instructions">🖱️ 左鍵旋轉查看 | 觀察：導軌與 M8 平面的接觸關係</div>
+    <div id="canvas-container"></div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let screw, sleeve, motorFan;
+        let isAnimating = true;
+        let transparentMode = false;
+        
+        // 物理參數
+        const PITCH = 0.7; 
+        const MAX_STROKE = 6; 
+        const SLEEVE_DEPTH = 15; 
+        const GEARBOX_TOP = 12; 
+        let currentPos = 0;
+        let direction = 1;
+        const linearSpeed = 0.03; 
+
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(45, 35, 65);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.target.set(0, 15, 0);
+
+            // 光源
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const pLight = new THREE.PointLight(0xffffff, 1.2);
+            pLight.position.set(30, 80, 40);
+            scene.add(pLight);
+
+            // 材質
+            const brassMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.8, roughness: 0.2 });
+            const steelMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.3 });
+            const motorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.4, roughness: 0.8 });
+            const ribMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.2, roughness: 0.9 });
+            const fanMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+            // --- 1. 固定基座 ---
+            const base = new THREE.Mesh(new THREE.BoxGeometry(60, 4, 80), ribMat);
+            base.position.y = -2;
+            scene.add(base);
+
+            // --- 2. 齒輪箱本體 (固定端) ---
+            const gearbox = new THREE.Mesh(new THREE.BoxGeometry(15.3, 12, 20), motorMat);
+            gearbox.position.y = 6; 
+            scene.add(gearbox);
+
+            // --- 3. 修正：限位導軌長度減半並確保接觸 ---
+            // 之前的 ribHeight 是 SLEEVE_DEPTH + MAX_STROKE (21)，現在減半為 10.5
+            const ribHeight = (SLEEVE_DEPTH + MAX_STROKE) / 2; 
+            const flatX = 3.2; // M8 D-Cut 的平面位置
+            
+            for(let i=0; i<2; i++) {
+                // 導軌寬度稍微加大，確保視覺上能卡住 D-Cut
+                const rib = new THREE.Mesh(new THREE.BoxGeometry(3.0, ribHeight, 8), ribMat);
+                
+                // 橫向位置精確對齊：
+                // 導軌內側面應在 flatX 位置。導軌中心 = flatX + (導軌厚度/2)
+                const ribThickness = 3.0;
+                const offset = flatX + (ribThickness / 2);
+                
+                rib.position.x = i === 0 ? offset : -offset;
+                
+                // 垂直位置：導軌從齒輪箱頂部 (y=12) 起算，向上覆蓋
+                rib.position.y = GEARBOX_TOP + (ribHeight / 2);
+                scene.add(rib);
+            }
+
+            // --- 4. M4 絲桿 (原地旋轉，全隱藏) ---
+            screw = new THREE.Group();
+            const screwPart = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 14, 16), steelMat);
+            
+            // 螺旋螺紋視覺
+            for(let i=0; i<12; i++) {
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(2.05, 0.12, 8, 24), new THREE.MeshBasicMaterial({color: 0x1e293b}));
+                ring.rotation.x = Math.PI/2 + 0.3; 
+                ring.position.y = (i * 1.1) - 6;
+                screwPart.add(ring);
+            }
+            screw.add(screwPart);
+            screw.position.y = 19.5; 
+            scene.add(screw);
+
+            // --- 5. 修正：M8 套管 (銳利 D-Cut) ---
+            const r = 4;
+            const preciseSleeveShape = new THREE.Shape();
+            const angle = Math.acos(flatX / r);
+            
+            // 繪製對稱的雙 D-Cut
+            preciseSleeveShape.moveTo(flatX, r * Math.sin(angle));
+            preciseSleeveShape.absarc(0, 0, r, angle, Math.PI - angle, false); // 上圓弧
+            preciseSleeveShape.lineTo(-flatX, -r * Math.sin(angle));
+            preciseSleeveShape.absarc(0, 0, r, Math.PI + angle, -angle, false); // 下圓弧
+            preciseSleeveShape.lineTo(flatX, r * Math.sin(angle));
+
+            const sleeveGeo = new THREE.ExtrudeGeometry(preciseSleeveShape, { depth: SLEEVE_DEPTH, bevelEnabled: false });
+            sleeve = new THREE.Mesh(sleeveGeo, brassMat);
+            sleeve.rotation.x = -Math.PI / 2;
+            
+            const topPad = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 1.5, 32), brassMat);
+            topPad.rotation.x = Math.PI/2;
+            topPad.position.z = SLEEVE_DEPTH; 
+            sleeve.add(topPad);
+            
+            scene.add(sleeve);
+
+            // --- 6. 馬達指示 ---
+            const motor = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 20, 32), motorMat);
+            motor.rotation.x = Math.PI / 2;
+            motor.position.set(0, 6, -15);
+            scene.add(motor);
+
+            motorFan = new THREE.Mesh(new THREE.BoxGeometry(10, 1, 1), fanMat);
+            motorFan.position.set(0, 6, -26);
+            scene.add(motorFan);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (isAnimating) {
+                currentPos += linearSpeed * direction;
+                if (currentPos >= MAX_STROKE || currentPos <= 0) direction *= -1;
+
+                const rotationAmount = (currentPos / PITCH) * Math.PI * 2;
+                screw.rotation.y = rotationAmount;
+                sleeve.position.y = GEARBOX_TOP + currentPos;
+                sleeve.rotation.y = 0; 
+                motorFan.rotation.z += 0.5;
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.toggleMotion = function() {
+            isAnimating = !isAnimating;
+            document.getElementById('toggle-motion').classList.toggle('active');
+        };
+
+        window.toggleSleeve = function() {
+            transparentMode = !transparentMode;
+            scene.traverse(function (object) {
+                if (object.isMesh && (object.geometry.type === 'BoxGeometry' || object.type === 'Mesh' || object.type === 'LineSegments')) {
+                    if (object !== screw && object !== sleeve) {
+                         object.material.transparent = true;
+                         object.material.opacity = transparentMode ? 0.3 : 1.0;
+                    }
+                }
+            });
+        };
+
+        window.onresize = function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+    </script>
+</body>
+</html>
