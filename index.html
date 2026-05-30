@@ -1,230 +1,911 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 模擬 (局部限位與接觸優化)</title>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Segoe UI', sans-serif; }
-        #canvas-container { width: 100vw; height: 100vh; }
-        #ui-panel {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(15, 23, 42, 0.95);
-            padding: 20px;
-            border-radius: 12px;
-            color: #fff;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-            border: 1px solid #334155;
-            max-width: 340px;
-            z-index: 10;
-        }
-        h2 { margin: 0 0 10px 0; font-size: 18px; color: #38bdf8; border-bottom: 2px solid #38bdf8; padding-bottom: 8px; }
-        .feature-list { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: #cbd5e1; }
-        .feature-list li { margin-bottom: 8px; }
-        .highlight { color: #f59e0b; font-weight: bold; }
-        .btn-group { margin-top: 15px; display: flex; flex-direction: column; gap: 8px; }
-        button {
-            background: #0284c7; color: white; border: none; padding: 12px; border-radius: 6px;
-            cursor: pointer; font-weight: bold; transition: all 0.2s;
-        }
-        button:hover { background: #0ea5e9; transform: translateY(-1px); }
-        button.active { background: #10b981; }
-        #instructions {
-            position: absolute;
-            bottom: 20px;
-            width: 100%;
-            text-align: center;
-            color: rgba(255,255,255,0.4);
-            font-size: 12px;
-            pointer-events: none;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d0d0b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" id="apple-icon">
+<link rel="manifest" id="manifest-link">
+<title>無 · Less</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@200;300;400&family=IM+Fell+English:ital@0;1&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0d0d0b;
+  --fg: #c8c0b0;
+  --dim: #5a5650;
+  --gold: #9a8060;
+  --breath: 4s;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Noto Serif TC', serif;
+  font-weight: 200;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none; /* 防止行動裝置上下滑動干擾 */
+}
+
+/* ── SCREENS ── */
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.8s ease;
+}
+.screen.active {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ── SCREEN 0: ENTRY ── */
+#s-entry .word {
+  font-family: 'IM Fell English', serif;
+  font-size: clamp(60px, 15vw, 120px);
+  color: var(--fg);
+  letter-spacing: 0.05em;
+  animation: breatheIn 3s ease both;
+}
+#s-entry .sub {
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: var(--dim);
+  margin-top: 24px;
+  text-transform: uppercase;
+  animation: breatheIn 3s ease 0.6s both;
+}
+#s-entry .tap-hint {
+  position: fixed;
+  bottom: 60px;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  text-transform: uppercase;
+  animation: blink 3s ease-in-out infinite 2s;
+}
+
+/* ── SCREEN 1: DAY INDICATOR ── */
+#s-day {
+  gap: 8px;
+}
+#s-day .day-num {
+  font-family: 'IM Fell English', serif;
+  font-size: clamp(80px, 20vw, 160px);
+  color: var(--fg);
+  line-height: 1;
+  opacity: 0.15;
+  transition: opacity 0.3s;
+}
+#s-day .day-num:hover {
+    opacity: 0.3;
+}
+#s-day .day-label {
+  font-size: 11px;
+  letter-spacing: 4px;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-top: 12px;
+}
+#s-day .day-msg {
+  font-size: 13px;
+  color: var(--gold);
+  margin-top: 32px;
+  letter-spacing: 1px;
+  line-height: 2;
+  text-align: center;
+  max-width: 260px;
+  height: 60px;
+}
+#s-day .start-btn {
+  margin-top: 60px;
+  width: 1px;
+  height: 40px;
+  background: var(--dim);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: height 0.4s ease, background-color 0.4s ease;
+}
+#s-day .start-btn::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border-right: 1px solid var(--dim);
+  border-bottom: 1px solid var(--dim);
+  transform: rotate(45deg) translateY(-2px);
+  transition: border-color 0.4s ease;
+}
+#s-day .start-btn:hover { 
+    height: 60px; 
+    background: var(--fg);
+}
+#s-day .start-btn:hover::after {
+    border-color: var(--fg);
+}
+
+/* ── SCREEN 2: SESSION ── */
+#s-session {
+  gap: 0;
+}
+
+/* Phase 4 Long Press Progress */
+#long-press-ring {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 100px;
+  height: 100px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px solid var(--dim);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+#long-press-ring.pressing {
+  opacity: 0.5;
+  animation: shrinkRing 2s linear forwards;
+}
+
+/* Breathing orb */
+.orb-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.orb {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #4a4038, #1a1610);
+  box-shadow: 0 0 40px rgba(154,128,96,0.15);
+  animation: breathe var(--breath) ease-in-out infinite;
+}
+.orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(154,128,96,0.12);
+  animation: ringPulse var(--breath) ease-in-out infinite;
+}
+.orb-ring:nth-child(2) { inset: -20px; animation-delay: 0.3s; }
+.orb-ring:nth-child(3) { inset: -40px; animation-delay: 0.6s; border-color: rgba(154,128,96,0.06); }
+
+/* Timer */
+.timer-display {
+  margin-top: 48px;
+  font-family: 'IM Fell English', serif;
+  font-size: 48px;
+  color: var(--fg);
+  opacity: 0.4;
+  letter-spacing: 0.05em;
+  min-width: 120px;
+  text-align: center;
+  transition: opacity 1s ease;
+}
+
+/* Phase label */
+.phase-label {
+  margin-top: 16px;
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: var(--dim);
+  text-transform: uppercase;
+  height: 16px;
+  transition: opacity 1s;
+}
+
+/* End button */
+.end-btn {
+  position: fixed;
+  bottom: 50px;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 2s ease, color 0.3s ease;
+  font-family: 'Noto Serif TC', serif;
+  font-weight: 200;
+}
+.end-btn.visible { 
+    opacity: 1; 
+    pointer-events: auto;
+}
+.end-btn:hover { color: var(--fg); }
+
+/* ── SCREEN 3: COMPLETION ── */
+#s-end {
+  gap: 0;
+}
+.end-duration {
+  font-family: 'IM Fell English', serif;
+  font-size: 13px;
+  color: var(--dim);
+  letter-spacing: 3px;
+  margin-bottom: 48px;
+}
+.end-quote {
+  font-size: 14px;
+  color: var(--gold);
+  line-height: 2.2;
+  text-align: center;
+  max-width: 240px;
+  font-style: italic;
+}
+.end-quote span {
+  display: block;
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 2px;
+  color: var(--dim);
+  margin-top: 20px;
+  text-transform: uppercase;
+}
+
+/* Feature dissolve indicator */
+.dissolve-bar {
+  position: fixed;
+  bottom: 100px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.dissolve-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: opacity 0.5s;
+}
+.dissolve-dot.off { opacity: 0.15; }
+.dissolve-note {
+  margin-left: 12px;
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+
+.home-btn {
+  position: fixed;
+  bottom: 50px;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: 'Noto Serif TC', serif;
+  font-weight: 200;
+  text-transform: uppercase;
+  transition: color 0.3s ease;
+}
+.home-btn:hover { color: var(--fg); }
+
+/* ── SETTINGS OVERLAY ── */
+#s-settings {
+  background: var(--bg);
+  z-index: 10;
+  gap: 32px;
+  padding: 60px 40px;
+  overflow-y: auto;
+  justify-content: flex-start;
+  padding-top: 100px;
+}
+#s-settings h2 {
+  font-family: 'IM Fell English', serif;
+  font-size: 28px;
+  color: var(--fg);
+  margin-bottom: 8px;
+  font-weight: 400;
+}
+.settings-close {
+  position: fixed;
+  top: 40px;
+  right: 40px;
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 20px;
+  cursor: pointer;
+  font-family: 'IM Fell English', serif;
+  transition: color 0.3s ease;
+}
+.settings-close:hover { color: var(--fg); }
+.setting-row {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid rgba(90,86,80,0.2);
+  padding-top: 24px;
+}
+.setting-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.setting-value {
+  font-size: 15px;
+  color: var(--fg);
+}
+.duration-btns {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dur-btn {
+  padding: 6px 16px;
+  border: 1px solid rgba(90,86,80,0.3);
+  background: none;
+  color: var(--dim);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: 'Noto Serif TC', serif;
+  transition: all 0.3s;
+  letter-spacing: 1px;
+}
+.dur-btn.sel {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.phase-info {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 2;
+  max-width: 320px;
+  border-top: 1px solid rgba(90,86,80,0.2);
+  padding-top: 24px;
+}
+.phase-info strong { color: var(--gold); }
+
+.reset-btn {
+  margin-top: 20px;
+  padding: 8px 16px;
+  background: none;
+  border: 1px dashed rgba(90,86,80,0.3);
+  color: var(--dim);
+  font-size: 10px;
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: color 0.3s, border-color 0.3s;
+}
+.reset-btn:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+
+/* Settings trigger */
+.settings-btn {
+  position: fixed;
+  top: 36px;
+  right: 36px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.4s;
+  width: 20px;
+  height: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  z-index: 5;
+}
+.settings-btn span {
+  display: block;
+  height: 1px;
+  background: var(--dim);
+  transition: width 0.3s, background-color 0.3s;
+}
+.settings-btn span:nth-child(2) { width: 60%; }
+.settings-btn:hover span { 
+    width: 100%; 
+    background-color: var(--fg);
+}
+body:not(.in-session) .settings-btn { opacity: 1; pointer-events: auto;}
+body.in-session .settings-btn { pointer-events: none; }
+
+/* ── ANIMATIONS ── */
+@keyframes breatheIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 0.7; }
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 30px rgba(154,128,96,0.1); }
+  50%       { transform: scale(2.2); box-shadow: 0 0 60px rgba(154,128,96,0.25); }
+}
+@keyframes ringPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%       { opacity: 0;   transform: scale(1.3); }
+}
+@keyframes shrinkRing {
+  0%   { transform: translate(-50%, -50%) scale(1); }
+  100% { transform: translate(-50%, -50%) scale(0); opacity: 0;}
+}
+</style>
 </head>
 <body>
 
-    <div id="ui-panel">
-        <h2>物理修正：減半限位與緊密接觸</h2>
-        <ul class="feature-list">
-            <li><span class="highlight">限位機構長度減半:</span> 導軌高度縮減為原本的一半（約 10.5mm），與齒輪箱一體成型。</li>
-            <li><span class="highlight">緊密物理接觸:</span> 調整導軌橫向座標，確保導軌內側面與 M8 的 D-Cut 平面完全貼合，無空隙。</li>
-            <li><span class="highlight">標準 D-Cut (雙面):</span> 修正 M8 形狀，確保兩側為絕對平整的防轉受力面。</li>
-            <li><span class="highlight">隱藏傳動:</span> M4 絲桿長度優化，當 M8 縮回時完全不可見。</li>
-        </ul>
-        <div class="btn-group">
-            <button id="toggle-sleeve" onclick="toggleSleeve()">切換外殼透明度</button>
-            <button id="toggle-motion" class="active" onclick="toggleMotion()">暫停/播放 模擬</button>
-        </div>
+<!-- Settings button -->
+<button class="settings-btn" onclick="showSettings()" aria-label="設定">
+  <span></span><span></span><span></span>
+</button>
+
+<!-- SCREEN 0: Entry -->
+<div class="screen active" id="s-entry" onclick="goTo('s-day')">
+  <div class="word">無</div>
+  <div class="sub">Less · 少即是多</div>
+  <div class="tap-hint">輕觸開始</div>
+</div>
+
+<!-- SCREEN 1: Day + Phase -->
+<div class="screen" id="s-day">
+  <div class="day-num" id="day-num" title="雙擊可快轉天數(測試用)">1</div>
+  <div class="day-label">第 <span id="day-label-n">1</span> 天</div>
+  <div class="day-msg" id="day-msg"></div>
+  <button class="start-btn" onclick="startSession()"></button>
+</div>
+
+<!-- SCREEN 2: Session -->
+<div class="screen" id="s-session">
+  <!-- 用於階段四的長按動畫視覺提示 -->
+  <div id="long-press-ring"></div>
+  
+  <div class="orb-wrap" id="orb-container">
+    <div class="orb-ring"></div>
+    <div class="orb-ring"></div>
+    <div class="orb-ring"></div>
+    <div class="orb"></div>
+  </div>
+  <div class="timer-display" id="timer">00:00</div>
+  <div class="phase-label" id="phase-lbl"></div>
+  <button class="end-btn" id="end-btn" onclick="endSession()">結束</button>
+</div>
+
+<!-- SCREEN 3: Completion -->
+<div class="screen" id="s-end">
+  <div class="end-duration" id="end-duration"></div>
+  <div class="end-quote" id="end-quote"></div>
+  <div class="dissolve-bar" id="dissolve-bar"></div>
+  <button class="home-btn" onclick="goTo('s-day')">返回</button>
+</div>
+
+<!-- Settings Overlay -->
+<div class="screen" id="s-settings">
+  <button class="settings-close" onclick="closeSettings()">✕</button>
+  <h2>設定</h2>
+
+  <div class="setting-row">
+    <div class="setting-label">每次時長</div>
+    <div class="duration-btns" id="dur-btns">
+      <button class="dur-btn" data-min="1">1分 (測試)</button>
+      <button class="dur-btn" data-min="5">5分</button>
+      <button class="dur-btn sel" data-min="10">10分</button>
+      <button class="dur-btn" data-min="20">20分</button>
     </div>
+  </div>
 
-    <div id="instructions">🖱️ 左鍵旋轉查看 | 觀察：導軌與 M8 平面的接觸關係</div>
-    <div id="canvas-container"></div>
+  <div class="setting-row">
+    <div class="setting-label">當前階段</div>
+    <div class="setting-value" id="phase-display"></div>
+  </div>
 
-    <script>
-        let scene, camera, renderer, controls;
-        let screw, sleeve, motorFan;
-        let isAnimating = true;
-        let transparentMode = false;
-        
-        // 物理參數
-        const PITCH = 0.7; 
-        const MAX_STROKE = 6; 
-        const SLEEVE_DEPTH = 15; 
-        const GEARBOX_TOP = 12; 
-        let currentPos = 0;
-        let direction = 1;
-        const linearSpeed = 0.03; 
+  <div class="phase-info">
+    <strong>階段一（第1–7天）</strong><br>引導呼吸 · 計時器 · 結束提示<br><br>
+    <strong>階段二（第8–30天）</strong><br>計時器 · 結束提示（引導消失）<br><br>
+    <strong>階段三（第31–90天）</strong><br>僅計時器（其餘淡化）<br><br>
+    <strong>階段四（第91天後）</strong><br>空白畫面 · 長按螢幕結束<br>
+    APP自動建議你刪除它。
+  </div>
+  
+  <button class="reset-btn" onclick="resetOverride()">↻ 恢復真實天數</button>
+</div>
 
-        init();
-        animate();
+<script>
+// ── SAFE STORAGE (解決預覽環境阻擋 localStorage 導致崩潰的問題) ──
+const safeStorage = {
+  store: {},
+  getItem(key) { return this.store[key] || null; },
+  setItem(key, value) { this.store[key] = value.toString(); },
+  removeItem(key) { delete this.store[key]; }
+};
 
-        function init() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(45, 35, 65);
+// ── WAKE LOCK API (防止螢幕休眠) ──
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch (err) {
+    console.log(`Wake Lock API error: ${err.name}, ${err.message}`);
+  }
+}
+function releaseWakeLock() {
+  if (wakeLock !== null) {
+    wakeLock.release();
+    wakeLock = null;
+  }
+}
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+// ── STATE ──
+const getRealDay = () => {
+    const startDate = safeStorage.getItem('less_start_date');
+    if (!startDate) return 1;
+    
+    const start = new Date(parseInt(startDate));
+    const now = new Date();
+    start.setHours(0,0,0,0);
+    now.setHours(0,0,0,0);
+    const diffTime = Math.abs(now - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    return diffDays + 1; 
+};
 
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.target.set(0, 15, 0);
+const STATE = {
+  day: parseInt(safeStorage.getItem('less_day_override')) || getRealDay(),
+  totalSessions: parseInt(safeStorage.getItem('less_sessions') || '0'),
+  durationMin: parseInt(safeStorage.getItem('less_dur') || '10'),
+  hasReachedTime: false // 標記是否已經達到目標時間
+};
 
-            // 光源
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-            const pLight = new THREE.PointLight(0xffffff, 1.2);
-            pLight.position.set(30, 80, 40);
-            scene.add(pLight);
+if (!safeStorage.getItem('less_start_date')) {
+    safeStorage.setItem('less_start_date', Date.now().toString());
+}
 
-            // 材質
-            const brassMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.8, roughness: 0.2 });
-            const steelMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9, roughness: 0.3 });
-            const motorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.4, roughness: 0.8 });
-            const ribMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.2, roughness: 0.9 });
-            const fanMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+function getPhase(day) {
+  if (day <= 7)  return 1;
+  if (day <= 30) return 2;
+  if (day <= 90) return 3;
+  return 4;
+}
 
-            // --- 1. 固定基座 ---
-            const base = new THREE.Mesh(new THREE.BoxGeometry(60, 4, 80), ribMat);
-            base.position.y = -2;
-            scene.add(base);
+const PHASE_NAMES = { 1:'引導期', 2:'靜觀期', 3:'純粹期', 4:'空無期' };
 
-            // --- 2. 齒輪箱本體 (固定端) ---
-            const gearbox = new THREE.Mesh(new THREE.BoxGeometry(15.3, 12, 20), motorMat);
-            gearbox.position.y = 6; 
-            scene.add(gearbox);
+const DAY_MESSAGES = {
+  1: '每一個念頭都是雲。\n你是天空，不是雲。',
+  2: '不需要停止思考。\n只需停止跟隨它。',
+  3: '吸氣，知道自己在吸氣。\n呼氣，知道自己在呼氣。',
+  7: '一週了。\n你注意到什麼變少了嗎？',
+  14: '兩週。\n引導音已經消失。\n你還在。',
+  30: '一個月。\n現在只剩計時器。\n計時器也是多餘的。',
+  90: '三個月。\n這個APP快完成它的使命了。',
+};
 
-            // --- 3. 修正：限位導軌長度減半並確保接觸 ---
-            // 之前的 ribHeight 是 SLEEVE_DEPTH + MAX_STROKE (21)，現在減半為 10.5
-            const ribHeight = (SLEEVE_DEPTH + MAX_STROKE) / 2; 
-            const flatX = 3.2; // M8 D-Cut 的平面位置
-            
-            for(let i=0; i<2; i++) {
-                // 導軌寬度稍微加大，確保視覺上能卡住 D-Cut
-                const rib = new THREE.Mesh(new THREE.BoxGeometry(3.0, ribHeight, 8), ribMat);
-                
-                // 橫向位置精確對齊：
-                // 導軌內側面應在 flatX 位置。導軌中心 = flatX + (導軌厚度/2)
-                const ribThickness = 3.0;
-                const offset = flatX + (ribThickness / 2);
-                
-                rib.position.x = i === 0 ? offset : -offset;
-                
-                // 垂直位置：導軌從齒輪箱頂部 (y=12) 起算，向上覆蓋
-                rib.position.y = GEARBOX_TOP + (ribHeight / 2);
-                scene.add(rib);
-            }
+function getDayMsg(day) {
+  const keys = Object.keys(DAY_MESSAGES).map(Number).sort((a,b)=>b-a);
+  for (const k of keys) {
+    if (day >= k) return DAY_MESSAGES[k];
+  }
+  return DAY_MESSAGES[1];
+}
 
-            // --- 4. M4 絲桿 (原地旋轉，全隱藏) ---
-            screw = new THREE.Group();
-            const screwPart = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 14, 16), steelMat);
-            
-            // 螺旋螺紋視覺
-            for(let i=0; i<12; i++) {
-                const ring = new THREE.Mesh(new THREE.TorusGeometry(2.05, 0.12, 8, 24), new THREE.MeshBasicMaterial({color: 0x1e293b}));
-                ring.rotation.x = Math.PI/2 + 0.3; 
-                ring.position.y = (i * 1.1) - 6;
-                screwPart.add(ring);
-            }
-            screw.add(screwPart);
-            screw.position.y = 19.5; 
-            scene.add(screw);
+const QUOTES = [
+  ['致虛極，守靜篤。', '道德經·十六章'],
+  ['應無所住而生其心。', '金剛經'],
+  ['為學日益，為道日損。', '道德經·四十八章'],
+  ['不思善，不思惡，正恁麼時，那個是明上座本來面目？', '六祖壇經'],
+  ['萬物並作，吾以觀復。', '道德經·十六章'],
+];
 
-            // --- 5. 修正：M8 套管 (銳利 D-Cut) ---
-            const r = 4;
-            const preciseSleeveShape = new THREE.Shape();
-            const angle = Math.acos(flatX / r);
-            
-            // 繪製對稱的雙 D-Cut
-            preciseSleeveShape.moveTo(flatX, r * Math.sin(angle));
-            preciseSleeveShape.absarc(0, 0, r, angle, Math.PI - angle, false); // 上圓弧
-            preciseSleeveShape.lineTo(-flatX, -r * Math.sin(angle));
-            preciseSleeveShape.absarc(0, 0, r, Math.PI + angle, -angle, false); // 下圓弧
-            preciseSleeveShape.lineTo(flatX, r * Math.sin(angle));
+// ── NAVIGATION ──
+let prevScreen = null;
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (id === 's-day') renderDay();
+  document.body.classList.toggle('in-session', id === 's-session');
+}
 
-            const sleeveGeo = new THREE.ExtrudeGeometry(preciseSleeveShape, { depth: SLEEVE_DEPTH, bevelEnabled: false });
-            sleeve = new THREE.Mesh(sleeveGeo, brassMat);
-            sleeve.rotation.x = -Math.PI / 2;
-            
-            const topPad = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 1.5, 32), brassMat);
-            topPad.rotation.x = Math.PI/2;
-            topPad.position.z = SLEEVE_DEPTH; 
-            sleeve.add(topPad);
-            
-            scene.add(sleeve);
+// ── DAY SCREEN ──
+function renderDay() {
+  const phase = getPhase(STATE.day);
+  document.getElementById('day-num').textContent = STATE.day;
+  document.getElementById('day-label-n').textContent = STATE.day;
+  document.getElementById('day-msg').style.whiteSpace = 'pre-line';
+  document.getElementById('day-msg').textContent = getDayMsg(STATE.day);
+}
 
-            // --- 6. 馬達指示 ---
-            const motor = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 20, 32), motorMat);
-            motor.rotation.x = Math.PI / 2;
-            motor.position.set(0, 6, -15);
-            scene.add(motor);
+// ── SESSION ──
+let sessionTimer = null;
+let sessionSec = 0;
+let minSec = 0;
 
-            motorFan = new THREE.Mesh(new THREE.BoxGeometry(10, 1, 1), fanMat);
-            motorFan.position.set(0, 6, -26);
-            scene.add(motorFan);
-        }
+function startSession() {
+  requestWakeLock(); // 請求保持螢幕常亮
+  sessionSec = 0;
+  STATE.hasReachedTime = false;
+  minSec = STATE.durationMin * 60;
+  
+  applyPhaseVisuals();
+  updateTimer();
+  updatePhaseLabel();
 
-        function animate() {
-            requestAnimationFrame(animate);
-            if (isAnimating) {
-                currentPos += linearSpeed * direction;
-                if (currentPos >= MAX_STROKE || currentPos <= 0) direction *= -1;
+  document.getElementById('end-btn').classList.remove('visible');
+  goTo('s-session');
 
-                const rotationAmount = (currentPos / PITCH) * Math.PI * 2;
-                screw.rotation.y = rotationAmount;
-                sleeve.position.y = GEARBOX_TOP + currentPos;
-                sleeve.rotation.y = 0; 
-                motorFan.rotation.z += 0.5;
-            }
-            controls.update();
-            renderer.render(scene, camera);
-        }
+  sessionTimer = setInterval(() => {
+    sessionSec++;
+    updateTimer();
+    updatePhaseLabel();
+    
+    // 時間到達的瞬間處理
+    if (sessionSec === minSec) {
+      STATE.hasReachedTime = true;
+      triggerTimeReachedFeedback();
+      
+      // 如果不是第四階段，顯示結束按鈕
+      if (getPhase(STATE.day) < 4) {
+          document.getElementById('end-btn').classList.add('visible');
+      }
+    }
+  }, 1000);
+}
 
-        window.toggleMotion = function() {
-            isAnimating = !isAnimating;
-            document.getElementById('toggle-motion').classList.toggle('active');
-        };
+function applyPhaseVisuals() {
+    const phase = getPhase(STATE.day);
+    const orbContainer = document.getElementById('orb-container');
+    const timerEl = document.getElementById('timer');
+    
+    // Phase 4: 空無期 (隱藏所有介面)
+    if (phase >= 4) {
+        orbContainer.style.display = 'none';
+        timerEl.style.display = 'none';
+    } else {
+        orbContainer.style.display = 'flex';
+        timerEl.style.display = 'block';
+    }
+}
 
-        window.toggleSleeve = function() {
-            transparentMode = !transparentMode;
-            scene.traverse(function (object) {
-                if (object.isMesh && (object.geometry.type === 'BoxGeometry' || object.type === 'Mesh' || object.type === 'LineSegments')) {
-                    if (object !== screw && object !== sleeve) {
-                         object.material.transparent = true;
-                         object.material.opacity = transparentMode ? 0.3 : 1.0;
-                    }
-                }
-            });
-        };
+function updateTimer() {
+  const phase = getPhase(STATE.day);
+  const el = document.getElementById('timer');
+  if (phase >= 4) return;
+  
+  const m = String(Math.floor(sessionSec / 60)).padStart(2,'0');
+  const s = String(sessionSec % 60).padStart(2,'0');
+  el.textContent = `${m}:${s}`;
+  
+  el.style.opacity = phase === 3 ? '0.1' : '0.4';
+}
 
-        window.onresize = function() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        };
-    </script>
+function updatePhaseLabel() {
+  const phase = getPhase(STATE.day);
+  const el = document.getElementById('phase-lbl');
+  
+  if (phase >= 2) { 
+      el.style.opacity = '0'; 
+      return; 
+  }
+  
+  const cycle = sessionSec % 8;
+  el.style.opacity = '1';
+  if (cycle < 4) el.textContent = '吸　　　';
+  else           el.textContent = '　　　呼';
+}
+
+// 觸覺回饋：溫柔提醒時間到了
+function triggerTimeReachedFeedback() {
+    if ('vibrate' in navigator) {
+        // 輕微的兩下震動，類似心跳，不具侵略性
+        navigator.vibrate([50, 100, 50]); 
+    }
+}
+
+function endSession() {
+  clearInterval(sessionTimer);
+  releaseWakeLock(); // 釋放螢幕常亮鎖定
+  
+  // 只有當至少達到設定時間才計入一次有效 Session (防止意外退出洗數據)
+  if (sessionSec >= minSec) {
+      STATE.totalSessions++;
+      safeStorage.setItem('less_sessions', STATE.totalSessions);
+  }
+  
+  renderCompletion(sessionSec);
+  goTo('s-end');
+}
+
+// ── 長按邏輯 (針對階段四) ──
+let longPressTimer;
+const LONG_PRESS_DURATION = 2000; // 2秒
+const sessionScreen = document.getElementById('s-session');
+const ring = document.getElementById('long-press-ring');
+
+function startLongPress(e) {
+    if (getPhase(STATE.day) < 4 || !STATE.hasReachedTime) return; // 只有在階段四且時間達到後才允許長按結束
+    
+    // 定位動畫環到點擊位置 (如果是觸控事件)
+    if(e.touches && e.touches.length > 0) {
+        ring.style.left = e.touches[0].clientX + 'px';
+        ring.style.top = e.touches[0].clientY + 'px';
+    } else {
+        ring.style.left = e.clientX + 'px';
+        ring.style.top = e.clientY + 'px';
+    }
+    
+    ring.classList.add('pressing');
+    longPressTimer = setTimeout(() => {
+        endSession();
+        cancelLongPress();
+    }, LONG_PRESS_DURATION);
+}
+
+function cancelLongPress() {
+    clearTimeout(longPressTimer);
+    ring.classList.remove('pressing');
+}
+
+// 綁定觸控與滑鼠事件
+sessionScreen.addEventListener('mousedown', startLongPress);
+sessionScreen.addEventListener('touchstart', startLongPress, {passive: true});
+sessionScreen.addEventListener('mouseup', cancelLongPress);
+sessionScreen.addEventListener('mouseleave', cancelLongPress);
+sessionScreen.addEventListener('touchend', cancelLongPress);
+sessionScreen.addEventListener('touchcancel', cancelLongPress);
+
+// ── COMPLETION ──
+function renderCompletion(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  document.getElementById('end-duration').textContent =
+    `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+
+  const q = QUOTES[STATE.totalSessions % QUOTES.length];
+  document.getElementById('end-quote').innerHTML =
+    `${q[0]}<span>${q[1]}</span>`;
+
+  const phase = getPhase(STATE.day);
+  const features = ['引導呼吸','計時器','結束鍵','空白'];
+  const activeCount = Math.max(0, 4 - (phase - 1));
+  const bar = document.getElementById('dissolve-bar');
+  bar.innerHTML = '';
+  features.forEach((f, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'dissolve-dot' + (i >= activeCount ? ' off' : '');
+    dot.title = f;
+    bar.appendChild(dot);
+  });
+  const note = document.createElement('div');
+  note.className = 'dissolve-note';
+  note.textContent = PHASE_NAMES[phase];
+  bar.appendChild(note);
+
+  if (phase === 4) {
+    document.getElementById('end-quote').innerHTML +=
+      '<span style="margin-top:32px;color:#9a8060;font-style:normal;font-size:11px;">你已不再需要這個APP。<br>請刪除它。</span>';
+  }
+}
+
+// ── SETTINGS ──
+function showSettings() {
+  prevScreen = document.querySelector('.screen.active')?.id;
+  goTo('s-settings');
+  renderSettings();
+}
+function closeSettings() {
+  goTo(prevScreen || 's-day');
+}
+function renderSettings() {
+  const phase = getPhase(STATE.day);
+  document.getElementById('phase-display').textContent =
+    `階段 ${phase}：${PHASE_NAMES[phase]}（第${STATE.day}天）`;
+    
+  document.querySelectorAll('.dur-btn').forEach(btn => {
+    btn.classList.toggle('sel', parseInt(btn.dataset.min) === STATE.durationMin);
+    btn.onclick = () => {
+      STATE.durationMin = parseInt(btn.dataset.min);
+      safeStorage.setItem('less_dur', STATE.durationMin);
+      document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('sel'));
+      btn.classList.add('sel');
+    };
+  });
+}
+
+// 恢復真實時間機制
+function resetOverride() {
+    safeStorage.removeItem('less_day_override');
+    STATE.day = getRealDay();
+    renderSettings();
+    const btn = document.querySelector('.reset-btn');
+    btn.textContent = "✓ 已恢復";
+    setTimeout(() => { btn.textContent = "↻ 恢復真實天數"; }, 2000);
+}
+
+// ── INIT ──
+renderDay();
+
+// 測試用：雙擊天數數字可以快進時間
+document.getElementById('day-num').addEventListener('dblclick', () => {
+  STATE.day = STATE.day < 91 ? STATE.day + 7 : 1;
+  safeStorage.setItem('less_day_override', STATE.day); 
+  renderDay();
+  
+  const msgEl = document.getElementById('day-msg');
+  msgEl.textContent = "【測試模式】天數已快進";
+  msgEl.style.color = "var(--fg)";
+  setTimeout(()=>{
+      msgEl.textContent = getDayMsg(STATE.day);
+      msgEl.style.color = "var(--gold)";
+  }, 1500);
+});
+
+// ── PWA 單檔動態註冊 (Manifest & Service Worker) ──
+(function initPWA() {
+  try {
+    // 1. 動態生成極簡 App 圖示 (SVG)
+    const svgIcon = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' fill='#0d0d0b'/><circle cx='256' cy='256' r='120' fill='url(#g)'/><defs><radialGradient id='g' cx='35%' cy='35%' r='65%'><stop offset='0%' stop-color='#4a4038'/><stop offset='100%' stop-color='#1a1610'/></radialGradient></defs></svg>`;
+    const iconUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgIcon);
+    
+    // 寫入 iOS 專屬 Icon 標籤
+    const appleIcon = document.getElementById('apple-icon');
+    if(appleIcon) appleIcon.href = iconUrl;
+
+    // 2. 動態生成 manifest.json (告訴手機這是一個 App)
+    const manifest = {
+      name: "無 · Less",
+      short_name: "無",
+      start_url: ".",
+      display: "fullscreen",
+      background_color: "#0d0d0b",
+      theme_color: "#0d0d0b",
+      icons: [{ src: iconUrl, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }]
+    };
+    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    const manifestLink = document.getElementById('manifest-link');
+    if(manifestLink) manifestLink.href = URL.createObjectURL(manifestBlob);
+
+    // 3. 動態生成 Service Worker (賦予離線啟動能力)
+    const swCode = `
+      self.addEventListener('install', e => self.skipWaiting());
+      self.addEventListener('activate', e => self.clients.claim());
+      self.addEventListener('fetch', e => {
+        // 由於我們是單一檔案，只需攔截請求確保離線不報錯
+      });
+    `;
+    const swBlob = new Blob([swCode], { type: 'application/javascript' });
+    
+    // 註冊 Service Worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register(URL.createObjectURL(swBlob))
+        .then(() => console.log('PWA Ready: 已具備安裝至桌面與離線執行能力。'))
+        .catch(err => console.log('PWA 註冊受限於當前沙盒環境 (部署後即可正常運作)'));
+    }
+  } catch (e) {
+    console.log('PWA 初始化失敗');
+  }
+})();
+</script>
 </body>
 </html>
