@@ -517,6 +517,14 @@ body.in-session .settings-btn { pointer-events: none; }
   </div>
 
   <div class="setting-row">
+    <div class="setting-label">音效</div>
+    <div class="duration-btns">
+      <button class="dur-btn" data-sound="1">開啟</button>
+      <button class="dur-btn" data-sound="0">關閉</button>
+    </div>
+  </div>
+
+  <div class="setting-row">
     <div class="setting-label">當前階段</div>
     <div class="setting-value" id="phase-display"></div>
   </div>
@@ -577,6 +585,7 @@ const STATE = {
   day: parseInt(safeStorage.getItem('less_day_override')) || getRealDay(),
   totalSessions: parseInt(safeStorage.getItem('less_sessions') || '0'),
   durationMin: parseInt(safeStorage.getItem('less_dur') || '10'),
+  soundEnabled: safeStorage.getItem('less_sound') !== '0', // 預設開啟音效
   hasReachedTime: false // 標記是否已經達到目標時間
 };
 
@@ -619,6 +628,44 @@ const QUOTES = [
   ['萬物並作，吾以觀復。', '道德經·十六章'],
 ];
 
+// ── WEB AUDIO API (純數學生成引磬/頌缽音效) ──
+let audioCtx = null;
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}
+
+function playZenBell() {
+    if (!STATE.soundEnabled) return;
+    initAudio();
+    
+    const t = audioCtx.currentTime;
+    // 432Hz 宇宙療癒頻率基音，搭配 216Hz 與 1150Hz 泛音，產生金屬敲擊與共鳴感
+    const freqs = [216, 432, 1150]; 
+    
+    freqs.forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t);
+        
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(i === 0 ? 0.6 : 0.15, t + 0.05); // 敲擊瞬間
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 4 + i); // 悠長餘音
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        osc.start(t);
+        osc.stop(t + 4 + i);
+    });
+}
+
 // ── NAVIGATION ──
 let prevScreen = null;
 function goTo(id) {
@@ -644,6 +691,9 @@ let minSec = 0;
 
 function startSession() {
   requestWakeLock(); // 請求保持螢幕常亮
+  initAudio(); // 初始化音訊環境 (必須在使用者互動時觸發)
+  playZenBell(); // 開場敲擊引磬一聲
+  
   sessionSec = 0;
   STATE.hasReachedTime = false;
   minSec = STATE.durationMin * 60;
@@ -715,19 +765,20 @@ function updatePhaseLabel() {
   else           el.textContent = '　　　呼';
 }
 
-// 觸覺回饋：溫柔提醒時間到了
+// 觸覺回饋與音效：溫柔提醒時間到了
 function triggerTimeReachedFeedback() {
     if ('vibrate' in navigator) {
-        // 輕微的兩下震動，類似心跳，不具侵略性
+        // 輕微的兩下震動
         navigator.vibrate([50, 100, 50]); 
     }
+    playZenBell(); // 結束時敲擊引磬
 }
 
 function endSession() {
   clearInterval(sessionTimer);
   releaseWakeLock(); // 釋放螢幕常亮鎖定
   
-  // 只有當至少達到設定時間才計入一次有效 Session (防止意外退出洗數據)
+  // 只有當至少達到設定時間才計入一次有效 Session
   if (sessionSec >= minSec) {
       STATE.totalSessions++;
       safeStorage.setItem('less_sessions', STATE.totalSessions);
@@ -744,9 +795,8 @@ const sessionScreen = document.getElementById('s-session');
 const ring = document.getElementById('long-press-ring');
 
 function startLongPress(e) {
-    if (getPhase(STATE.day) < 4 || !STATE.hasReachedTime) return; // 只有在階段四且時間達到後才允許長按結束
+    if (getPhase(STATE.day) < 4 || !STATE.hasReachedTime) return;
     
-    // 定位動畫環到點擊位置 (如果是觸控事件)
     if(e.touches && e.touches.length > 0) {
         ring.style.left = e.touches[0].clientX + 'px';
         ring.style.top = e.touches[0].clientY + 'px';
@@ -823,13 +873,24 @@ function renderSettings() {
     `階段 ${phase}：${PHASE_NAMES[phase]}（第${STATE.day}天）`;
     
   document.querySelectorAll('.dur-btn').forEach(btn => {
-    btn.classList.toggle('sel', parseInt(btn.dataset.min) === STATE.durationMin);
-    btn.onclick = () => {
-      STATE.durationMin = parseInt(btn.dataset.min);
-      safeStorage.setItem('less_dur', STATE.durationMin);
-      document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('sel'));
-      btn.classList.add('sel');
-    };
+    // 判斷是時長按鈕還是音效按鈕
+    if (btn.dataset.min) {
+        btn.classList.toggle('sel', parseInt(btn.dataset.min) === STATE.durationMin);
+        btn.onclick = () => {
+          STATE.durationMin = parseInt(btn.dataset.min);
+          safeStorage.setItem('less_dur', STATE.durationMin);
+          renderSettings(); // 重新渲染以更新選中狀態
+        };
+    } else if (btn.dataset.sound) {
+        const isSoundOn = btn.dataset.sound === '1';
+        btn.classList.toggle('sel', isSoundOn === STATE.soundEnabled);
+        btn.onclick = () => {
+            STATE.soundEnabled = isSoundOn;
+            safeStorage.setItem('less_sound', isSoundOn ? '1' : '0');
+            if(isSoundOn) playZenBell(); // 開啟時試播一聲
+            renderSettings();
+        };
+    }
   });
 }
 
@@ -891,16 +952,14 @@ document.getElementById('day-num').addEventListener('dblclick', () => {
       self.addEventListener('install', e => self.skipWaiting());
       self.addEventListener('activate', e => self.clients.claim());
       self.addEventListener('fetch', e => {
-        // 由於我們是單一檔案，只需攔截請求確保離線不報錯
+        // 單一檔案，攔截以支援離線
       });
     `;
     const swBlob = new Blob([swCode], { type: 'application/javascript' });
     
-    // 註冊 Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register(URL.createObjectURL(swBlob))
-        .then(() => console.log('PWA Ready: 已具備安裝至桌面與離線執行能力。'))
-        .catch(err => console.log('PWA 註冊受限於當前沙盒環境 (部署後即可正常運作)'));
+        .catch(err => console.log('PWA 註冊受限於當前沙盒環境'));
     }
   } catch (e) {
     console.log('PWA 初始化失敗');
